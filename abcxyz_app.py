@@ -51,19 +51,23 @@ ABCXYZ_ORDER = ["AX", "AY", "AZ", "AN", "BX", "BY", "BZ", "BN", "CX", "CY", "CZ"
 
 @st.cache_data(show_spinner="Loading sales data...")
 def load_and_prepare_data():
-    sales_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
+    sales_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
     master_path = BASE_DIR / "Master Artikel.XLSX"
 
     if not sales_files:
-        raise FileNotFoundError("No sales-regional-*.csv files were found.")
+        raise FileNotFoundError("No sales-regional-*.parquet files were found.")
     if not master_path.exists():
         raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
-    sales_frames = [pd.read_csv(path) for path in sales_files]
+    sales_frames = [pd.read_parquet(path) for path in sales_files]
     df = pd.concat(sales_frames, ignore_index=True)
+    df["ARTICLE"] = df["ARTICLE"].astype("string")
     df = df.drop(columns=[col for col in df.columns if col.startswith("GR_")], errors="ignore")
 
     master = pd.read_excel(master_path)
+    master["Article"] = master["Article"].astype("string")
+    df["ARTICLE"] = df["ARTICLE"].astype("string")
+    master["Article"] = master["Article"].astype("string")
     master_indexed = master.set_index("Article")
     mappings = {
         "price": "Loc Amount",
