@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import plotly.express as px
 import streamlit as st
 
@@ -70,7 +71,23 @@ def load_and_prepare_data():
     if not master_path.exists():
         raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
-    sales_frames = [pd.read_parquet(path, columns=sales_cols) for path in sales_files]
+    sales_frames = []
+    for path in sales_files:
+        available_columns = set(pq.ParquetFile(path).schema_arrow.names)
+        missing_columns = set(sales_cols) - available_columns
+        unexpected_missing = missing_columns - {"REGIONAL_AREA"}
+        if unexpected_missing:
+            raise ValueError(
+                f"{path.name} is missing required columns: "
+                f"{', '.join(sorted(unexpected_missing))}"
+            )
+
+        read_columns = [column for column in sales_cols if column in available_columns]
+        frame = pd.read_parquet(path, columns=read_columns)
+        if "REGIONAL_AREA" not in frame:
+            frame["REGIONAL_AREA"] = "Unknown"
+        sales_frames.append(frame[sales_cols])
+
     df = pd.concat(sales_frames, ignore_index=True)
     df["ARTICLE"] = df["ARTICLE"].astype("string")
 
