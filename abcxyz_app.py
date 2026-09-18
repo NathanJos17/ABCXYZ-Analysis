@@ -53,18 +53,28 @@ ABCXYZ_ORDER = ["AX", "AY", "AZ", "AN", "BX", "BY", "BZ", "BN", "CX", "CY", "CZ"
 def load_and_prepare_data():
     sales_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
     master_path = BASE_DIR / "Master Artikel.XLSX"
+    sales_cols = [
+        "ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
+        *[f"QTY_SALES_{month}_2025" for month in [
+            "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+            "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+        ]],
+    ]
+    master_cols = [
+        "Article", "Loc Amount", "Product Classification",
+        "Lv3-Description", "Lv4-Description", "Generic Code",
+    ]
 
     if not sales_files:
         raise FileNotFoundError("No sales-regional-*.parquet files were found.")
     if not master_path.exists():
         raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
-    sales_frames = [pd.read_parquet(path) for path in sales_files]
+    sales_frames = [pd.read_parquet(path, columns=sales_cols) for path in sales_files]
     df = pd.concat(sales_frames, ignore_index=True)
     df["ARTICLE"] = df["ARTICLE"].astype("string")
-    df = df.drop(columns=[col for col in df.columns if col.startswith("GR_")], errors="ignore")
 
-    master = pd.read_excel(master_path)
+    master = pd.read_excel(master_path, usecols=master_cols)
     master["Article"] = master["Article"].astype("string")
     df["ARTICLE"] = df["ARTICLE"].astype("string")
     master["Article"] = master["Article"].astype("string")
@@ -78,13 +88,6 @@ def load_and_prepare_data():
     }
     for output_col, source_col in mappings.items():
         df[output_col] = df["ARTICLE"].map(master_indexed[source_col])
-
-    sales_cols = [
-        col for col in df.columns
-        if col.startswith("QTY_SALES_") and col.endswith("_2025")
-    ]
-    if not sales_cols:
-        raise ValueError("No January-December 2025 QTY_SALES columns were found.")
 
     group_cols = [
         "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
