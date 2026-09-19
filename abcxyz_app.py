@@ -55,12 +55,12 @@ def load_and_prepare_data():
     sales_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
     master_path = BASE_DIR / "Master Artikel.XLSX"
     sales_cols = [
-        "ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
-        *[f"QTY_SALES_{month}_2025" for month in [
+        f"QTY_SALES_{month}_2025" for month in [
             "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
             "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
-        ]],
+        ]
     ]
+    sales_dimension_cols = ["ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA"]
     master_cols = [
         "Article", "Loc Amount", "Product Classification",
         "Lv3-Description", "Lv4-Description", "Generic Code",
@@ -74,7 +74,7 @@ def load_and_prepare_data():
     sales_frames = []
     for path in sales_files:
         available_columns = set(pq.ParquetFile(path).schema_arrow.names)
-        missing_columns = set(sales_cols) - available_columns
+        missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
         unexpected_missing = missing_columns - {"REGIONAL_AREA"}
         if unexpected_missing:
             raise ValueError(
@@ -82,11 +82,15 @@ def load_and_prepare_data():
                 f"{', '.join(sorted(unexpected_missing))}"
             )
 
-        read_columns = [column for column in sales_cols if column in available_columns]
+        read_columns = [
+            column
+            for column in [*sales_dimension_cols, *sales_cols]
+            if column in available_columns
+        ]
         frame = pd.read_parquet(path, columns=read_columns)
         if "REGIONAL_AREA" not in frame:
             frame["REGIONAL_AREA"] = "Unknown"
-        sales_frames.append(frame[sales_cols])
+        sales_frames.append(frame[[*sales_dimension_cols, *sales_cols]])
 
     df = pd.concat(sales_frames, ignore_index=True)
     df["ARTICLE"] = df["ARTICLE"].astype("string")
