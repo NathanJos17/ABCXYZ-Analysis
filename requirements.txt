@@ -1,7 +1,6 @@
-streamlit
+pyarrow
+openpyxl
 pandas
 numpy
 plotly
-openpyxl
-pyarrow
-pyarrow
+streamlit
