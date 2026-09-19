@@ -4,9 +4,13 @@ import os
 
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 import plotly.express as px
 import streamlit as st
+
+try:
+    import pyarrow.parquet as pq
+except ImportError:
+    pq = None
 
 
 st.set_page_config(
@@ -53,6 +57,8 @@ ABCXYZ_ORDER = ["AX", "AY", "AZ", "AN", "BX", "BY", "BZ", "BN", "CX", "CY", "CZ"
 @st.cache_data(show_spinner="Loading sales data...")
 def load_and_prepare_data():
     sales_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
+    if not sales_files:
+        sales_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
     master_path = BASE_DIR / "Master Artikel.XLSX"
     sales_cols = [
         f"QTY_SALES_{month}_2025" for month in [
@@ -67,13 +73,37 @@ def load_and_prepare_data():
     ]
 
     if not sales_files:
-        raise FileNotFoundError("No sales-regional-*.parquet files were found.")
+        raise FileNotFoundError(
+            "No sales files were found. Expected sales-regional-*.parquet or .csv."
+        )
     if not master_path.exists():
         raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
     sales_frames = []
     for path in sales_files:
-        available_columns = set(pq.ParquetFile(path).schema_arrow.names)
+        is_parquet = path.suffix.lower() == ".parquet"
+        fallback_path = path.with_suffix(".csv")
+
+        if is_parquet and pq is not None:
+            try:
+                available_columns = set(pq.ParquetFile(path).schema_arrow.names)
+            except Exception as error:
+                if not fallback_path.exists():
+                    raise RuntimeError(f"Could not read {path.name}: {error}") from error
+                path = fallback_path
+                is_parquet = False
+                available_columns = set(pd.read_csv(path, nrows=0).columns)
+        elif is_parquet:
+            if not fallback_path.exists():
+                raise RuntimeError(
+                    "pyarrow is unavailable and no CSV fallback was found."
+                )
+            path = fallback_path
+            is_parquet = False
+            available_columns = set(pd.read_csv(path, nrows=0).columns)
+        else:
+            available_columns = set(pd.read_csv(path, nrows=0).columns)
+
         missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
         unexpected_missing = missing_columns - {"REGIONAL_AREA"}
         if unexpected_missing:
@@ -87,7 +117,10 @@ def load_and_prepare_data():
             for column in [*sales_dimension_cols, *sales_cols]
             if column in available_columns
         ]
-        frame = pd.read_parquet(path, columns=read_columns)
+        if is_parquet:
+            frame = pd.read_parquet(path, columns=read_columns)
+        else:
+            frame = pd.read_csv(path, usecols=read_columns, low_memory=False)
         if "REGIONAL_AREA" not in frame:
             frame["REGIONAL_AREA"] = "Unknown"
         sales_frames.append(frame[[*sales_dimension_cols, *sales_cols]])
