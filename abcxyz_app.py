@@ -54,11 +54,42 @@ BASE_DIR = Path(__file__).resolve().parent
 ABCXYZ_ORDER = ["AX", "AY", "AZ", "AN", "BX", "BY", "BZ", "BN", "CX", "CY", "CZ", "CN"]
 
 
+def choose_regional_file():
+    if st.session_state.get("selected_sales_file"):
+        return Path(st.session_state.selected_sales_file)
+
+    available_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
+    if not available_files:
+        available_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
+    if not available_files:
+        raise FileNotFoundError(
+            "No sales files were found. Expected sales-regional-*.parquet or .csv."
+        )
+
+    file_options = {
+        path.stem.removeprefix("sales-").replace("-", " ").title(): path
+        for path in available_files
+    }
+    labels = sorted(file_options)
+
+    st.title("ABCXYZ Sales Analysis")
+    st.write("Choose one regional area to load before opening the dashboard.")
+    with st.form("regional_selection"):
+        selected_label = st.selectbox("Regional Area", labels)
+        submitted = st.form_submit_button("Open regional dashboard", type="primary")
+
+    if not submitted:
+        st.stop()
+    selected_file = file_options[selected_label]
+    st.session_state.selected_sales_file = str(selected_file)
+    return selected_file
+
+
+selected_sales_file = choose_regional_file()
+
+
 @st.cache_data(show_spinner="Loading sales data...")
-def load_and_prepare_data():
-    sales_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
-    if not sales_files:
-        sales_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
+def load_and_prepare_data(selected_sales_file):
     master_path = BASE_DIR / "Master Artikel.XLSX"
     sales_cols = [
         f"QTY_SALES_{month}_2025" for month in [
@@ -72,60 +103,51 @@ def load_and_prepare_data():
         "Lv3-Description", "Lv4-Description", "Generic Code",
     ]
 
-    if not sales_files:
-        raise FileNotFoundError(
-            "No sales files were found. Expected sales-regional-*.parquet or .csv."
-        )
     if not master_path.exists():
         raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
-    sales_frames = []
-    for path in sales_files:
-        is_parquet = path.suffix.lower() == ".parquet"
-        fallback_path = path.with_suffix(".csv")
+    path = Path(selected_sales_file)
+    is_parquet = path.suffix.lower() == ".parquet"
+    fallback_path = path.with_suffix(".csv")
 
-        if is_parquet and pq is not None:
-            try:
-                available_columns = set(pq.ParquetFile(path).schema_arrow.names)
-            except Exception as error:
-                if not fallback_path.exists():
-                    raise RuntimeError(f"Could not read {path.name}: {error}") from error
-                path = fallback_path
-                is_parquet = False
-                available_columns = set(pd.read_csv(path, nrows=0).columns)
-        elif is_parquet:
+    if is_parquet and pq is not None:
+        try:
+            available_columns = set(pq.ParquetFile(path).schema_arrow.names)
+        except Exception as error:
             if not fallback_path.exists():
-                raise RuntimeError(
-                    "pyarrow is unavailable and no CSV fallback was found."
-                )
+                raise RuntimeError(f"Could not read {path.name}: {error}") from error
             path = fallback_path
             is_parquet = False
             available_columns = set(pd.read_csv(path, nrows=0).columns)
-        else:
-            available_columns = set(pd.read_csv(path, nrows=0).columns)
+    elif is_parquet:
+        if not fallback_path.exists():
+            raise RuntimeError("pyarrow is unavailable and no CSV fallback was found.")
+        path = fallback_path
+        is_parquet = False
+        available_columns = set(pd.read_csv(path, nrows=0).columns)
+    else:
+        available_columns = set(pd.read_csv(path, nrows=0).columns)
 
-        missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
-        unexpected_missing = missing_columns - {"REGIONAL_AREA"}
-        if unexpected_missing:
-            raise ValueError(
-                f"{path.name} is missing required columns: "
-                f"{', '.join(sorted(unexpected_missing))}"
-            )
+    missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
+    unexpected_missing = missing_columns - {"REGIONAL_AREA"}
+    if unexpected_missing:
+        raise ValueError(
+            f"{path.name} is missing required columns: "
+            f"{', '.join(sorted(unexpected_missing))}"
+        )
 
-        read_columns = [
-            column
-            for column in [*sales_dimension_cols, *sales_cols]
-            if column in available_columns
-        ]
-        if is_parquet:
-            frame = pd.read_parquet(path, columns=read_columns)
-        else:
-            frame = pd.read_csv(path, usecols=read_columns, low_memory=False)
-        if "REGIONAL_AREA" not in frame:
-            frame["REGIONAL_AREA"] = "Unknown"
-        sales_frames.append(frame[[*sales_dimension_cols, *sales_cols]])
-
-    df = pd.concat(sales_frames, ignore_index=True)
+    read_columns = [
+        column
+        for column in [*sales_dimension_cols, *sales_cols]
+        if column in available_columns
+    ]
+    if is_parquet:
+        df = pd.read_parquet(path, columns=read_columns)
+    else:
+        df = pd.read_csv(path, usecols=read_columns, low_memory=False)
+    if "REGIONAL_AREA" not in df:
+        df["REGIONAL_AREA"] = "Unknown"
+    df = df[[*sales_dimension_cols, *sales_cols]]
     df["ARTICLE"] = df["ARTICLE"].astype("string")
 
     master = pd.read_excel(master_path, usecols=master_cols)
@@ -248,13 +270,17 @@ st.title("ABCXYZ Sales Analysis")
 st.caption("2025 sales | ABC ranked by sales value | XYZ based on quantity CV")
 
 try:
-    base_data = load_and_prepare_data()
+    base_data = load_and_prepare_data(selected_sales_file)
 except Exception as error:
     st.error(str(error))
     st.stop()
 
 with st.sidebar:
     st.header("Analysis Controls")
+    if st.button("Change regional area"):
+        del st.session_state["selected_sales_file"]
+        st.rerun()
+
     with st.form("cv_controls"):
         x_limit = st.number_input(
             "X: CV below",
