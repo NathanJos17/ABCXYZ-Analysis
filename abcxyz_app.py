@@ -322,12 +322,25 @@ with st.sidebar:
     selected_prod = st.multiselect("Product Classification", prod_options, default=prod_options)
     abcxyz_options = [value for value in ABCXYZ_ORDER if value in classified["abc_xyz"].unique()]
     selected_classes = st.multiselect("ABCXYZ class", abcxyz_options, default=abcxyz_options)
+    sku_options = sorted(classified["ARTICLE"].dropna().astype(str).unique().tolist())
+    selected_skus = st.multiselect(
+        "SKU",
+        sku_options,
+        placeholder="Search and select SKUs",
+    )
+
+sku_filter = (
+    classified["ARTICLE"].isin(selected_skus)
+    if selected_skus
+    else pd.Series(True, index=classified.index)
+)
 
 filtered = classified[
     classified["REGIONAL_AREA"].astype(str).isin(selected_regions)
     & classified["SITE_ID"].isin(selected_sites)
     & classified["ProdClass"].astype(str).isin(selected_prod)
     & classified["abc_xyz"].isin(selected_classes)
+    & sku_filter
 ].copy()
 
 metric_columns = st.columns(4)
