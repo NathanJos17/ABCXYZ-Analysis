@@ -100,7 +100,7 @@ def load_and_prepare_data(selected_sales_file):
     sales_dimension_cols = ["ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA"]
     master_cols = [
         "Article", "Loc Amount", "Product Classification",
-        "Lv3-Description", "Lv4-Description", "Generic Code",
+        "Lv3-Description", "Lv4-Description", "Generic Code", "COLOUR CODE",
     ]
 
     if not master_path.exists():
@@ -161,12 +161,14 @@ def load_and_prepare_data(selected_sales_file):
         "lv3": "Lv3-Description",
         "lv4": "Lv4-Description",
         "generic": "Generic Code",
+        "color_code": "COLOUR CODE",
     }
     for output_col, source_col in mappings.items():
         df[output_col] = df["ARTICLE"].map(master_indexed[source_col])
+    df["sku"] = df["generic"].astype("string") + "." + df["color_code"].astype("string")
 
     group_cols = [
-        "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
+        "ARTICLE", "sku", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
         "ProdClass", "lv3", "lv4",
     ]
     sales_by_article = (
@@ -199,7 +201,7 @@ def load_and_prepare_data(selected_sales_file):
 
     return sales_by_article[
         [
-            "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
+            "ARTICLE", "sku", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
             "ProdClass", "lv3", "lv4",
             "price", "total_qty", "avg_monthly_qty", "stdev_monthly_qty", "total_value",
             "avg_monthly_value", "cv",
@@ -334,7 +336,7 @@ with st.sidebar:
     selected_prod = st.multiselect("Product Classification", prod_options, default=prod_options)
     abcxyz_options = [value for value in ABCXYZ_ORDER if value in classified["abc_xyz"].unique()]
     selected_classes = st.multiselect("ABCXYZ class", abcxyz_options, default=abcxyz_options)
-    sku_options = sorted(classified["ARTICLE"].dropna().astype(str).unique().tolist())
+    sku_options = sorted(classified["sku"].dropna().astype(str).unique().tolist())
     selected_skus = st.multiselect(
         "SKU",
         sku_options,
@@ -342,7 +344,7 @@ with st.sidebar:
     )
 
 sku_filter = (
-    classified["ARTICLE"].isin(selected_skus)
+    classified["sku"].isin(selected_skus)
     if selected_skus
     else pd.Series(True, index=classified.index)
 )
@@ -376,7 +378,7 @@ with left_chart:
         title="Article Count by ABCXYZ Class",
         labels={"abc_xyz": "Class", "count_article": "Articles"},
     )
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, width="stretch")
 
 with right_chart:
     value_by_abc = filtered.groupby("abc_class", as_index=False)["total_value"].sum()
@@ -387,7 +389,7 @@ with right_chart:
         title="Sales Value by ABC Class",
         labels={"abc_class": "ABC Class", "total_value": "Sales Value"},
     )
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, width="stretch")
 
 st.subheader("ABCXYZ Summary")
 summary = filtered.groupby("abc_xyz", as_index=False).agg(
@@ -397,7 +399,7 @@ summary = filtered.groupby("abc_xyz", as_index=False).agg(
 )
 summary["abc_xyz"] = pd.Categorical(summary["abc_xyz"], categories=ABCXYZ_ORDER, ordered=True)
 summary = summary.sort_values("abc_xyz")
-st.dataframe(format_table(summary), use_container_width=True, hide_index=True)
+st.dataframe(format_table(summary), width="stretch", hide_index=True)
 
 st.subheader("ABCXYZ Matrix")
 matrix_groupby = filtered.groupby(["abc_class", "xyz_class"], observed=True).agg(
@@ -417,27 +419,29 @@ generic_matrix = matrix_groupby["count_generic"].unstack(fill_value=0).reindex(
 
 matrix_tabs = st.tabs(["Sales Qty", "Sales Value", "Count Generic"])
 with matrix_tabs[0]:
-    st.dataframe(format_table(qty_matrix.reset_index()), use_container_width=True, hide_index=True)
+    st.dataframe(format_table(qty_matrix.reset_index()), width="stretch", hide_index=True)
 with matrix_tabs[1]:
-    st.dataframe(format_table(value_matrix.reset_index()), use_container_width=True, hide_index=True)
+    st.dataframe(format_table(value_matrix.reset_index()), width="stretch", hide_index=True)
 with matrix_tabs[2]:
-    st.dataframe(generic_matrix.reset_index(), use_container_width=True, hide_index=True)
+    st.dataframe(generic_matrix.reset_index(), width="stretch", hide_index=True)
 
 st.subheader("Article Detail")
 detail_columns = [
-    "ARTICLE", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
+    "ARTICLE", "sku", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
     "ProdClass", "lv3", "lv4",
     "total_qty", "total_value", "abc_contribution", "cum_pct",
     "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_class", "xyz_class", "abc_xyz",
 ]
 detail_export = filtered[detail_columns].rename(columns={
-    "ARTICLE": "SKU",
+    "ARTICLE": "Article Codes",
+    "sku": "SKU",
+    "generic": "Generic",
     "abc_contribution": "Contribution (ABC)",
     "cum_pct": "Cumulative Contribution (ABC)",
     "avg_monthly_qty": "Average Sales (XYZ)",
     "stdev_monthly_qty": "STDEV",
 })
-st.dataframe(format_table(detail_export), use_container_width=True, hide_index=True)
+st.dataframe(format_table(detail_export), width="stretch", hide_index=True)
 
 st.download_button(
     "Download filtered ABCXYZ detail",
@@ -507,7 +511,7 @@ with site_table_tabs[0]:
 
     st.dataframe(
         count_generic_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -519,6 +523,6 @@ with site_table_tabs[1]:
 
     st.dataframe(
         sales_value_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
