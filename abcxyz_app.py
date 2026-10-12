@@ -100,7 +100,7 @@ def load_and_prepare_data(selected_sales_file):
     sales_dimension_cols = ["ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA"]
     master_cols = [
         "Article", "Loc Amount", "Product Classification",
-        "Lv3-Description", "Lv4-Description", "Generic Code", "COLOUR CODE",
+        "Lv3-Description", "Lv4-Description", "Generic Code", "Cross-Site",
     ]
 
     if not master_path.exists():
@@ -161,11 +161,10 @@ def load_and_prepare_data(selected_sales_file):
         "lv3": "Lv3-Description",
         "lv4": "Lv4-Description",
         "generic": "Generic Code",
-        "color_code": "COLOUR CODE",
+        "sku": "Cross-Site",
     }
     for output_col, source_col in mappings.items():
         df[output_col] = df["ARTICLE"].map(master_indexed[source_col])
-    df["sku"] = df["generic"].astype("string") + "." + df["color_code"].astype("string")
 
     group_cols = [
         "ARTICLE", "sku", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
