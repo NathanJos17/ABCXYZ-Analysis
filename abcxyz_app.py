@@ -429,7 +429,7 @@ detail_columns = [
     "ARTICLE", "sku", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
     "ProdClass", "lv3", "lv4",
     "total_qty", "total_value", "abc_contribution", "cum_pct",
-    "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_class", "xyz_class", "abc_xyz",
+    "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_xyz",
 ]
 detail_export = filtered[detail_columns].rename(columns={
     "ARTICLE": "Article Codes",
