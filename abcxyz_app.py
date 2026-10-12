@@ -426,7 +426,7 @@ with matrix_tabs[2]:
 
 st.subheader("Article Detail")
 detail_columns = [
-    "ARTICLE", "sku", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
+    "ARTICLE", "sku", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
     "ProdClass", "lv3", "lv4",
     "total_qty", "total_value", "abc_contribution", "cum_pct",
     "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_class", "xyz_class", "abc_xyz",
@@ -434,7 +434,6 @@ detail_columns = [
 detail_export = filtered[detail_columns].rename(columns={
     "ARTICLE": "Article Codes",
     "sku": "SKU",
-    "generic": "Generic",
     "abc_contribution": "Contribution (ABC)",
     "cum_pct": "Cumulative Contribution (ABC)",
     "avg_monthly_qty": "Average Sales (XYZ)",
