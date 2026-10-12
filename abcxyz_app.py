@@ -188,12 +188,11 @@ def load_and_prepare_data(selected_sales_file):
     monthly_qty = sales_by_article[sales_cols]
     sales_by_article["total_qty"] = monthly_qty.sum(axis=1)
     sales_by_article["avg_monthly_qty"] = monthly_qty.mean(axis=1)
-    sales_by_article["stdev_monthly_qty"] = monthly_qty.std(axis=1, ddof=0)
     sales_by_article["total_value"] = sales_by_article["price"] * sales_by_article["total_qty"]
     sales_by_article["avg_monthly_value"] = (
         sales_by_article["price"] * sales_by_article["avg_monthly_qty"]
     )
-    sales_by_article["cv"] = sales_by_article["stdev_monthly_qty"].div(
+    sales_by_article["cv"] = monthly_qty.std(axis=1, ddof=0).div(
         monthly_qty.mean(axis=1).replace(0, np.nan)
     ).fillna(0)
 
@@ -201,7 +200,7 @@ def load_and_prepare_data(selected_sales_file):
         [
             "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
             "ProdClass", "lv3", "lv4",
-            "price", "total_qty", "avg_monthly_qty", "stdev_monthly_qty", "total_value",
+            "price", "total_qty", "avg_monthly_qty", "total_value",
             "avg_monthly_value", "cv",
         ]
     ].copy()
@@ -222,11 +221,6 @@ def classify_articles(data, x_limit, y_limit):
     result["cum_pct"] = np.where(
         result["group_total_value"] != 0,
         result["cum_value"] / result["group_total_value"],
-        0,
-    )
-    result["abc_contribution"] = np.where(
-        result["group_total_value"] != 0,
-        result["total_value"] / result["group_total_value"],
         0,
     )
     result["abc_class"] = np.select(
@@ -254,12 +248,6 @@ def format_table(data):
             formatted[column] = formatted[column].map(lambda value: f"{value:,.0f}")
     if "cv" in formatted:
         formatted["cv"] = formatted["cv"].map(lambda value: f"{value:.3f}")
-    for column in ["abc_contribution", "cum_pct", "Contribution (ABC)", "Cumulative Contribution (ABC)"]:
-        if column in formatted:
-            formatted[column] = formatted[column].map(lambda value: f"{value:.1%}")
-    for column in ["avg_monthly_qty", "stdev_monthly_qty", "Average Sales (XYZ)", "STDEV"]:
-        if column in formatted:
-            formatted[column] = formatted[column].map(lambda value: f"{value:,.2f}")
     return formatted
 
 def format_numeric_columns(data, exclude_columns=None):
@@ -427,21 +415,13 @@ st.subheader("Article Detail")
 detail_columns = [
     "ARTICLE", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
     "ProdClass", "lv3", "lv4",
-    "total_qty", "total_value", "abc_contribution", "cum_pct",
-    "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_class", "xyz_class", "abc_xyz",
+    "total_qty", "total_value", "cv", "abc_class", "xyz_class", "abc_xyz",
 ]
-detail_export = filtered[detail_columns].rename(columns={
-    "ARTICLE": "SKU",
-    "abc_contribution": "Contribution (ABC)",
-    "cum_pct": "Cumulative Contribution (ABC)",
-    "avg_monthly_qty": "Average Sales (XYZ)",
-    "stdev_monthly_qty": "STDEV",
-})
-st.dataframe(format_table(detail_export), use_container_width=True, hide_index=True)
+st.dataframe(format_table(filtered[detail_columns]), use_container_width=True, hide_index=True)
 
 st.download_button(
     "Download filtered ABCXYZ detail",
-    data=detail_export.to_csv(index=False).encode("utf-8"),
+    data=filtered.to_csv(index=False).encode("utf-8"),
     file_name="abcxyz_filtered_detail.csv",
     mime="text/csv",
 )
