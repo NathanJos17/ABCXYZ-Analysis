@@ -8,44 +8,44 @@ import plotly.express as px
 import streamlit as st
 
 try:
-    import pyarrow.parquet as pq
+import pyarrow.parquet as pq
 except ImportError:
-    pq = None
+pq = None
 
 
 st.set_page_config(
-    page_title="ABCXYZ Sales Analysis",
-    page_icon="📊",
-    layout="wide",
+page_title="ABCXYZ Sales Analysis",
+page_icon="📊",
+layout="wide",
 )
 
 
 def require_authentication():
-    """Require the deployment-provided password before loading any data."""
-    app_password = os.environ.get("ABCXYZ_APP_PASSWORD")
-    if not app_password:
-        try:
-            app_password = st.secrets["ABCXYZ_APP_PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            app_password = None
-    if not app_password:
-        st.error("Application password is not configured.")
-        st.stop()
+"""Require the deployment-provided password before loading any data."""
+app_password = os.environ.get("ABCXYZ_APP_PASSWORD")
+if not app_password:
+try:
+app_password = st.secrets["ABCXYZ_APP_PASSWORD"]
+except (KeyError, FileNotFoundError):
+app_password = None
+if not app_password:
+st.error("Application password is not configured.")
+st.stop()
 
-    if st.session_state.get("authenticated"):
-        return
+if st.session_state.get("authenticated"):
+return
 
-    st.title("ABCXYZ Sales Analysis")
-    with st.form("login_form"):
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in", type="primary")
+st.title("ABCXYZ Sales Analysis")
+with st.form("login_form"):
+password = st.text_input("Password", type="password")
+submitted = st.form_submit_button("Sign in", type="primary")
 
-    if submitted:
-        if hmac.compare_digest(password, app_password):
-            st.session_state.authenticated = True
-            st.rerun()
-        st.error("Incorrect password.")
-    st.stop()
+if submitted:
+if hmac.compare_digest(password, app_password):
+st.session_state.authenticated = True
+st.rerun()
+st.error("Incorrect password.")
+st.stop()
 
 
 require_authentication()
@@ -55,34 +55,34 @@ ABCXYZ_ORDER = ["AX", "AY", "AZ", "AN", "BX", "BY", "BZ", "BN", "CX", "CY", "CZ"
 
 
 def choose_regional_file():
-    if st.session_state.get("selected_sales_file"):
-        return Path(st.session_state.selected_sales_file)
+if st.session_state.get("selected_sales_file"):
+return Path(st.session_state.selected_sales_file)
 
-    available_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
-    if not available_files:
-        available_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
-    if not available_files:
-        raise FileNotFoundError(
-            "No sales files were found. Expected sales-regional-*.parquet or .csv."
-        )
+available_files = sorted(BASE_DIR.glob("sales-regional-*.parquet"))
+if not available_files:
+available_files = sorted(BASE_DIR.glob("sales-regional-*.csv"))
+if not available_files:
+raise FileNotFoundError(
+"No sales files were found. Expected sales-regional-*.parquet or .csv."
+)
 
-    file_options = {
-        path.stem.removeprefix("sales-").replace("-", " ").title(): path
-        for path in available_files
-    }
-    labels = sorted(file_options)
+file_options = {
+path.stem.removeprefix("sales-").replace("-", " ").title(): path
+for path in available_files
+}
+labels = sorted(file_options)
 
-    st.title("ABCXYZ Sales Analysis")
-    st.write("Choose one regional area to load before opening the dashboard.")
-    with st.form("regional_selection"):
-        selected_label = st.selectbox("Regional Area", labels)
-        submitted = st.form_submit_button("Open regional dashboard", type="primary")
+st.title("ABCXYZ Sales Analysis")
+st.write("Choose one regional area to load before opening the dashboard.")
+with st.form("regional_selection"):
+selected_label = st.selectbox("Regional Area", labels)
+submitted = st.form_submit_button("Open regional dashboard", type="primary")
 
-    if not submitted:
-        st.stop()
-    selected_file = file_options[selected_label]
-    st.session_state.selected_sales_file = str(selected_file)
-    return selected_file
+if not submitted:
+st.stop()
+selected_file = file_options[selected_label]
+st.session_state.selected_sales_file = str(selected_file)
+return selected_file
 
 
 selected_sales_file = choose_regional_file()
@@ -90,257 +90,271 @@ selected_sales_file = choose_regional_file()
 
 @st.cache_data(show_spinner="Loading sales data...")
 def load_and_prepare_data(selected_sales_file):
-    master_path = BASE_DIR / "Master Artikel.XLSX"
-    sales_cols = [
-        f"QTY_SALES_{month}_2025" for month in [
-            "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-            "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
-        ]
-    ]
-    sales_dimension_cols = ["ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA"]
-    master_cols = [
-        "Article", "Loc Amount", "Product Classification",
-        "Lv3-Description", "Lv4-Description", "Generic Code",
-    ]
+master_path = BASE_DIR / "Master Artikel.XLSX"
+sales_cols = [
+f"QTY_SALES_{month}_2025" for month in [
+"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+"JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+]
+]
+sales_dimension_cols = ["ARTICLE", "SITE_ID", "SITE_NAME", "REGIONAL_AREA"]
+master_cols = [
+"Article", "Loc Amount", "Product Classification",
+"Lv3-Description", "Lv4-Description", "Generic Code",
+]
 
-    if not master_path.exists():
-        raise FileNotFoundError("Master Artikel.XLSX was not found.")
+if not master_path.exists():
+raise FileNotFoundError("Master Artikel.XLSX was not found.")
 
-    path = Path(selected_sales_file)
-    is_parquet = path.suffix.lower() == ".parquet"
-    fallback_path = path.with_suffix(".csv")
+path = Path(selected_sales_file)
+is_parquet = path.suffix.lower() == ".parquet"
+fallback_path = path.with_suffix(".csv")
 
-    if is_parquet and pq is not None:
-        try:
-            available_columns = set(pq.ParquetFile(path).schema_arrow.names)
-        except Exception as error:
-            if not fallback_path.exists():
-                raise RuntimeError(f"Could not read {path.name}: {error}") from error
-            path = fallback_path
-            is_parquet = False
-            available_columns = set(pd.read_csv(path, nrows=0).columns)
-    elif is_parquet:
-        if not fallback_path.exists():
-            raise RuntimeError("pyarrow is unavailable and no CSV fallback was found.")
-        path = fallback_path
-        is_parquet = False
-        available_columns = set(pd.read_csv(path, nrows=0).columns)
-    else:
-        available_columns = set(pd.read_csv(path, nrows=0).columns)
+if is_parquet and pq is not None:
+try:
+available_columns = set(pq.ParquetFile(path).schema_arrow.names)
+except Exception as error:
+if not fallback_path.exists():
+raise RuntimeError(f"Could not read {path.name}: {error}") from error
+path = fallback_path
+is_parquet = False
+available_columns = set(pd.read_csv(path, nrows=0).columns)
+elif is_parquet:
+if not fallback_path.exists():
+raise RuntimeError("pyarrow is unavailable and no CSV fallback was found.")
+path = fallback_path
+is_parquet = False
+available_columns = set(pd.read_csv(path, nrows=0).columns)
+else:
+available_columns = set(pd.read_csv(path, nrows=0).columns)
 
-    missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
-    unexpected_missing = missing_columns - {"REGIONAL_AREA"}
-    if unexpected_missing:
-        raise ValueError(
-            f"{path.name} is missing required columns: "
-            f"{', '.join(sorted(unexpected_missing))}"
-        )
+missing_columns = (set(sales_cols) | set(sales_dimension_cols)) - available_columns
+unexpected_missing = missing_columns - {"REGIONAL_AREA"}
+if unexpected_missing:
+raise ValueError(
+f"{path.name} is missing required columns: "
+f"{', '.join(sorted(unexpected_missing))}"
+)
 
-    read_columns = [
-        column
-        for column in [*sales_dimension_cols, *sales_cols]
-        if column in available_columns
-    ]
-    if is_parquet:
-        df = pd.read_parquet(path, columns=read_columns)
-    else:
-        df = pd.read_csv(path, usecols=read_columns, low_memory=False)
-    if "REGIONAL_AREA" not in df:
-        df["REGIONAL_AREA"] = "Unknown"
-    df = df[[*sales_dimension_cols, *sales_cols]]
-    df["ARTICLE"] = df["ARTICLE"].astype("string")
+read_columns = [
+column
+for column in [*sales_dimension_cols, *sales_cols]
+if column in available_columns
+]
+if is_parquet:
+df = pd.read_parquet(path, columns=read_columns)
+else:
+df = pd.read_csv(path, usecols=read_columns, low_memory=False)
+if "REGIONAL_AREA" not in df:
+df["REGIONAL_AREA"] = "Unknown"
+df = df[[*sales_dimension_cols, *sales_cols]]
+df["ARTICLE"] = df["ARTICLE"].astype("string")
 
-    master = pd.read_excel(master_path, usecols=master_cols)
-    master["Article"] = master["Article"].astype("string")
-    df["ARTICLE"] = df["ARTICLE"].astype("string")
-    master["Article"] = master["Article"].astype("string")
-    master_indexed = master.set_index("Article")
-    mappings = {
-        "price": "Loc Amount",
-        "ProdClass": "Product Classification",
-        "lv3": "Lv3-Description",
-        "lv4": "Lv4-Description",
-        "generic": "Generic Code",
-    }
-    for output_col, source_col in mappings.items():
-        df[output_col] = df["ARTICLE"].map(master_indexed[source_col])
+master = pd.read_excel(master_path, usecols=master_cols)
+master["Article"] = master["Article"].astype("string")
+df["ARTICLE"] = df["ARTICLE"].astype("string")
+master["Article"] = master["Article"].astype("string")
+master_indexed = master.set_index("Article")
+mappings = {
+"price": "Loc Amount",
+"ProdClass": "Product Classification",
+"lv3": "Lv3-Description",
+"lv4": "Lv4-Description",
+"generic": "Generic Code",
+}
+for output_col, source_col in mappings.items():
+df[output_col] = df["ARTICLE"].map(master_indexed[source_col])
 
-    group_cols = [
-        "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
-        "ProdClass", "lv3", "lv4",
-    ]
-    sales_by_article = (
-        df.groupby(group_cols, sort=False, observed=True, dropna=False)[sales_cols]
-        .sum()
-        .reset_index()
-    )
+group_cols = [
+"ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
+"ProdClass", "lv3", "lv4",
+]
+sales_by_article = (
+df.groupby(group_cols, sort=False, observed=True, dropna=False)[sales_cols]
+.sum()
+.reset_index()
+)
 
-    prices = df[["ARTICLE", "price"]].drop_duplicates("ARTICLE")
-    sales_by_article = sales_by_article.merge(prices, on="ARTICLE", how="left")
+prices = df[["ARTICLE", "price"]].drop_duplicates("ARTICLE")
+sales_by_article = sales_by_article.merge(prices, on="ARTICLE", how="left")
 
-    sales_by_article[sales_cols] = sales_by_article[sales_cols].apply(
-        pd.to_numeric, errors="coerce"
-    ).fillna(0)
-    sales_by_article["price"] = pd.to_numeric(
-        sales_by_article["price"], errors="coerce"
-    ).fillna(0)
+sales_by_article[sales_cols] = sales_by_article[sales_cols].apply(
+pd.to_numeric, errors="coerce"
+).fillna(0)
+sales_by_article["price"] = pd.to_numeric(
+sales_by_article["price"], errors="coerce"
+).fillna(0)
 
-    monthly_qty = sales_by_article[sales_cols]
-    sales_by_article["total_qty"] = monthly_qty.sum(axis=1)
-    sales_by_article["avg_monthly_qty"] = monthly_qty.mean(axis=1)
-    sales_by_article["total_value"] = sales_by_article["price"] * sales_by_article["total_qty"]
-    sales_by_article["avg_monthly_value"] = (
-        sales_by_article["price"] * sales_by_article["avg_monthly_qty"]
-    )
+monthly_qty = sales_by_article[sales_cols]
+sales_by_article["total_qty"] = monthly_qty.sum(axis=1)
+sales_by_article["avg_monthly_qty"] = monthly_qty.mean(axis=1)
+    sales_by_article["stdev_monthly_qty"] = monthly_qty.std(axis=1, ddof=0)
+sales_by_article["total_value"] = sales_by_article["price"] * sales_by_article["total_qty"]
+sales_by_article["avg_monthly_value"] = (
+sales_by_article["price"] * sales_by_article["avg_monthly_qty"]
+)
+    sales_by_article["cv"] = sales_by_article["stdev_monthly_qty"].div(
     sales_by_article["cv"] = monthly_qty.std(axis=1, ddof=0).div(
-        monthly_qty.mean(axis=1).replace(0, np.nan)
-    ).fillna(0)
+monthly_qty.mean(axis=1).replace(0, np.nan)
+).fillna(0)
 
-    return sales_by_article[
-        [
-            "ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
-            "ProdClass", "lv3", "lv4",
+return sales_by_article[
+[
+"ARTICLE", "generic", "SITE_ID", "SITE_NAME", "REGIONAL_AREA",
+"ProdClass", "lv3", "lv4",
+            "price", "total_qty", "avg_monthly_qty", "stdev_monthly_qty", "total_value",
             "price", "total_qty", "avg_monthly_qty", "total_value",
-            "avg_monthly_value", "cv",
-        ]
-    ].copy()
+"avg_monthly_value", "cv",
+]
+].copy()
 
 
 def classify_articles(data, x_limit, y_limit):
-    result = data.sort_values(
-        ["SITE_ID", "ProdClass", "lv3", "lv4", "total_value"],
-        ascending=[True, True, True, True, False],
-    ).reset_index(drop=True)
-    ranking_cols = ["REGIONAL_AREA", "SITE_ID", "ProdClass", "lv3", "lv4"]
-    result["cum_value"] = result.groupby(
-        ranking_cols, observed=True, dropna=False
-    )["total_value"].cumsum()
-    result["group_total_value"] = result.groupby(
-        ranking_cols, observed=True, dropna=False
-    )["total_value"].transform("sum")
-    result["cum_pct"] = np.where(
+result = data.sort_values(
+["SITE_ID", "ProdClass", "lv3", "lv4", "total_value"],
+ascending=[True, True, True, True, False],
+).reset_index(drop=True)
+ranking_cols = ["REGIONAL_AREA", "SITE_ID", "ProdClass", "lv3", "lv4"]
+result["cum_value"] = result.groupby(
+ranking_cols, observed=True, dropna=False
+)["total_value"].cumsum()
+result["group_total_value"] = result.groupby(
+ranking_cols, observed=True, dropna=False
+)["total_value"].transform("sum")
+result["cum_pct"] = np.where(
+result["group_total_value"] != 0,
+result["cum_value"] / result["group_total_value"],
+0,
+)
+    result["abc_contribution"] = np.where(
         result["group_total_value"] != 0,
-        result["cum_value"] / result["group_total_value"],
+        result["total_value"] / result["group_total_value"],
         0,
     )
-    result["abc_class"] = np.select(
-        [result["cum_pct"] <= 0.80, result["cum_pct"] <= 0.95],
-        ["A", "B"],
-        default="C",
-    )
-    result["xyz_class"] = np.select(
-        [
-            result["total_qty"] == 0,
-            result["cv"] < x_limit,
-            (result["cv"] > x_limit) & (result["cv"] < y_limit),
-        ],
-        ["N", "X", "Y"],
-        default="Z",
-    )
-    result["abc_xyz"] = result["abc_class"] + result["xyz_class"]
-    return result
+result["abc_class"] = np.select(
+[result["cum_pct"] <= 0.80, result["cum_pct"] <= 0.95],
+["A", "B"],
+default="C",
+)
+result["xyz_class"] = np.select(
+[
+result["total_qty"] == 0,
+result["cv"] < x_limit,
+(result["cv"] > x_limit) & (result["cv"] < y_limit),
+],
+["N", "X", "Y"],
+default="Z",
+)
+result["abc_xyz"] = result["abc_class"] + result["xyz_class"]
+return result
 
 
 def format_table(data):
-    formatted = data.copy()
-    for column in ["total_qty", "total_value", "sales_qty", "sales_value"]:
+formatted = data.copy()
+for column in ["total_qty", "total_value", "sales_qty", "sales_value"]:
+if column in formatted:
+formatted[column] = formatted[column].map(lambda value: f"{value:,.0f}")
+if "cv" in formatted:
+formatted["cv"] = formatted["cv"].map(lambda value: f"{value:.3f}")
+    for column in ["abc_contribution", "cum_pct", "Contribution (ABC)", "Cumulative Contribution (ABC)"]:
         if column in formatted:
-            formatted[column] = formatted[column].map(lambda value: f"{value:,.0f}")
-    if "cv" in formatted:
-        formatted["cv"] = formatted["cv"].map(lambda value: f"{value:.3f}")
-    return formatted
+            formatted[column] = formatted[column].map(lambda value: f"{value:.1%}")
+    for column in ["avg_monthly_qty", "stdev_monthly_qty", "Average Sales (XYZ)", "STDEV"]:
+        if column in formatted:
+            formatted[column] = formatted[column].map(lambda value: f"{value:,.2f}")
+return formatted
 
 def format_numeric_columns(data, exclude_columns=None):
-    formatted = data.copy()
-    exclude_columns = set(exclude_columns or [])
+formatted = data.copy()
+exclude_columns = set(exclude_columns or [])
 
-    for column in formatted.columns:
-        if (
-            column not in exclude_columns
-            and pd.api.types.is_numeric_dtype(formatted[column])
-        ):
-            formatted[column] = formatted[column].map(
-                lambda value: f"{value:,.0f}"
-            )
+for column in formatted.columns:
+if (
+column not in exclude_columns
+and pd.api.types.is_numeric_dtype(formatted[column])
+):
+formatted[column] = formatted[column].map(
+lambda value: f"{value:,.0f}"
+)
 
-    return formatted
+return formatted
 
 
 st.title("ABCXYZ Sales Analysis")
 st.caption("2025 sales | ABC ranked by sales value | XYZ based on quantity CV")
 
 try:
-    base_data = load_and_prepare_data(selected_sales_file)
+base_data = load_and_prepare_data(selected_sales_file)
 except Exception as error:
-    st.error(str(error))
-    st.stop()
+st.error(str(error))
+st.stop()
 
 with st.sidebar:
-    st.header("Analysis Controls")
-    if st.button("Change regional area"):
-        del st.session_state["selected_sales_file"]
-        st.rerun()
+st.header("Analysis Controls")
+if st.button("Change regional area"):
+del st.session_state["selected_sales_file"]
+st.rerun()
 
-    with st.form("cv_controls"):
-        x_limit = st.number_input(
-            "X: CV below",
-            min_value=0.0,
-            max_value=10.0,
-            value=0.5,
-            step=0.05,
-            format="%.2f",
-        )
-        y_limit = st.number_input(
-            "Y: CV below",
-            min_value=0.0,
-            max_value=10.0,
-            value=1.0,
-            step=0.05,
-            format="%.2f",
-        )
-        apply_filters = st.form_submit_button("Apply CV rules", type="primary")
+with st.form("cv_controls"):
+x_limit = st.number_input(
+"X: CV below",
+min_value=0.0,
+max_value=10.0,
+value=0.5,
+step=0.05,
+format="%.2f",
+)
+y_limit = st.number_input(
+"Y: CV below",
+min_value=0.0,
+max_value=10.0,
+value=1.0,
+step=0.05,
+format="%.2f",
+)
+apply_filters = st.form_submit_button("Apply CV rules", type="primary")
 
-    if y_limit <= x_limit:
-        st.error("Y CV limit must be greater than X CV limit.")
-        st.stop()
+if y_limit <= x_limit:
+st.error("Y CV limit must be greater than X CV limit.")
+st.stop()
 
-    st.divider()
-    st.caption("Zero total quantity is always classified as N.")
+st.divider()
+st.caption("Zero total quantity is always classified as N.")
 
 classified = classify_articles(base_data, x_limit, y_limit)
 
 with st.sidebar:
-    region_options = sorted(
-        classified["REGIONAL_AREA"].dropna().astype(str).unique().tolist()
-    )
-    selected_regions = st.multiselect(
-        "Regional Area", region_options, default=region_options
-    )
-    site_options = sorted(classified["SITE_ID"].dropna().unique().tolist())
-    selected_sites = st.multiselect("Site", site_options, default=site_options)
-    prod_options = sorted(classified["ProdClass"].dropna().astype(str).unique().tolist())
-    selected_prod = st.multiselect("Product Classification", prod_options, default=prod_options)
-    abcxyz_options = [value for value in ABCXYZ_ORDER if value in classified["abc_xyz"].unique()]
-    selected_classes = st.multiselect("ABCXYZ class", abcxyz_options, default=abcxyz_options)
-    sku_options = sorted(classified["ARTICLE"].dropna().astype(str).unique().tolist())
-    selected_skus = st.multiselect(
-        "SKU",
-        sku_options,
-        placeholder="Search and select SKUs",
-    )
+region_options = sorted(
+classified["REGIONAL_AREA"].dropna().astype(str).unique().tolist()
+)
+selected_regions = st.multiselect(
+"Regional Area", region_options, default=region_options
+)
+site_options = sorted(classified["SITE_ID"].dropna().unique().tolist())
+selected_sites = st.multiselect("Site", site_options, default=site_options)
+prod_options = sorted(classified["ProdClass"].dropna().astype(str).unique().tolist())
+selected_prod = st.multiselect("Product Classification", prod_options, default=prod_options)
+abcxyz_options = [value for value in ABCXYZ_ORDER if value in classified["abc_xyz"].unique()]
+selected_classes = st.multiselect("ABCXYZ class", abcxyz_options, default=abcxyz_options)
+sku_options = sorted(classified["ARTICLE"].dropna().astype(str).unique().tolist())
+selected_skus = st.multiselect(
+"SKU",
+sku_options,
+placeholder="Search and select SKUs",
+)
 
 sku_filter = (
-    classified["ARTICLE"].isin(selected_skus)
-    if selected_skus
-    else pd.Series(True, index=classified.index)
+classified["ARTICLE"].isin(selected_skus)
+if selected_skus
+else pd.Series(True, index=classified.index)
 )
 
 filtered = classified[
-    classified["REGIONAL_AREA"].astype(str).isin(selected_regions)
-    & classified["SITE_ID"].isin(selected_sites)
-    & classified["ProdClass"].astype(str).isin(selected_prod)
-    & classified["abc_xyz"].isin(selected_classes)
-    & sku_filter
+classified["REGIONAL_AREA"].astype(str).isin(selected_regions)
+& classified["SITE_ID"].isin(selected_sites)
+& classified["ProdClass"].astype(str).isin(selected_prod)
+& classified["abc_xyz"].isin(selected_classes)
+& sku_filter
 ].copy()
 
 metric_columns = st.columns(4)
@@ -350,38 +364,38 @@ metric_columns[2].metric("Sales Value", f"{filtered['total_value'].sum():,.0f}")
 metric_columns[3].metric("Sites", f"{filtered['SITE_ID'].nunique():,}")
 
 if filtered.empty:
-    st.warning("No data matches the selected filters.")
-    st.stop()
+st.warning("No data matches the selected filters.")
+st.stop()
 
 left_chart, right_chart = st.columns(2)
 with left_chart:
-    class_counts = filtered["abc_xyz"].value_counts().reindex(ABCXYZ_ORDER, fill_value=0).reset_index()
-    class_counts.columns = ["abc_xyz", "count_article"]
-    figure = px.bar(
-        class_counts,
-        x="abc_xyz",
-        y="count_article",
-        title="Article Count by ABCXYZ Class",
-        labels={"abc_xyz": "Class", "count_article": "Articles"},
-    )
-    st.plotly_chart(figure, use_container_width=True)
+class_counts = filtered["abc_xyz"].value_counts().reindex(ABCXYZ_ORDER, fill_value=0).reset_index()
+class_counts.columns = ["abc_xyz", "count_article"]
+figure = px.bar(
+class_counts,
+x="abc_xyz",
+y="count_article",
+title="Article Count by ABCXYZ Class",
+labels={"abc_xyz": "Class", "count_article": "Articles"},
+)
+st.plotly_chart(figure, use_container_width=True)
 
 with right_chart:
-    value_by_abc = filtered.groupby("abc_class", as_index=False)["total_value"].sum()
-    figure = px.bar(
-        value_by_abc,
-        x="abc_class",
-        y="total_value",
-        title="Sales Value by ABC Class",
-        labels={"abc_class": "ABC Class", "total_value": "Sales Value"},
-    )
-    st.plotly_chart(figure, use_container_width=True)
+value_by_abc = filtered.groupby("abc_class", as_index=False)["total_value"].sum()
+figure = px.bar(
+value_by_abc,
+x="abc_class",
+y="total_value",
+title="Sales Value by ABC Class",
+labels={"abc_class": "ABC Class", "total_value": "Sales Value"},
+)
+st.plotly_chart(figure, use_container_width=True)
 
 st.subheader("ABCXYZ Summary")
 summary = filtered.groupby("abc_xyz", as_index=False).agg(
-    count_article=("ARTICLE", "nunique"),
-    sales_qty=("total_qty", "sum"),
-    sales_value=("total_value", "sum"),
+count_article=("ARTICLE", "nunique"),
+sales_qty=("total_qty", "sum"),
+sales_value=("total_value", "sum"),
 )
 summary["abc_xyz"] = pd.Categorical(summary["abc_xyz"], categories=ABCXYZ_ORDER, ordered=True)
 summary = summary.sort_values("abc_xyz")
@@ -389,86 +403,97 @@ st.dataframe(format_table(summary), use_container_width=True, hide_index=True)
 
 st.subheader("ABCXYZ Matrix")
 matrix_groupby = filtered.groupby(["abc_class", "xyz_class"], observed=True).agg(
-    sales_qty=("total_qty", "sum"),
-    sales_value=("total_value", "sum"),
-    count_generic=("generic", "nunique"),
+sales_qty=("total_qty", "sum"),
+sales_value=("total_value", "sum"),
+count_generic=("generic", "nunique"),
 )
 qty_matrix = matrix_groupby["sales_qty"].unstack(fill_value=0).reindex(
-    index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
+index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
 )
 value_matrix = matrix_groupby["sales_value"].unstack(fill_value=0).reindex(
-    index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
+index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
 )
 generic_matrix = matrix_groupby["count_generic"].unstack(fill_value=0).reindex(
-    index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
+index=["A", "B", "C"], columns=["N", "X", "Y", "Z"], fill_value=0
 )
 
 matrix_tabs = st.tabs(["Sales Qty", "Sales Value", "Count Generic"])
 with matrix_tabs[0]:
-    st.dataframe(format_table(qty_matrix.reset_index()), use_container_width=True, hide_index=True)
+st.dataframe(format_table(qty_matrix.reset_index()), use_container_width=True, hide_index=True)
 with matrix_tabs[1]:
-    st.dataframe(format_table(value_matrix.reset_index()), use_container_width=True, hide_index=True)
+st.dataframe(format_table(value_matrix.reset_index()), use_container_width=True, hide_index=True)
 with matrix_tabs[2]:
-    st.dataframe(generic_matrix.reset_index(), use_container_width=True, hide_index=True)
+st.dataframe(generic_matrix.reset_index(), use_container_width=True, hide_index=True)
 
 st.subheader("Article Detail")
 detail_columns = [
-    "ARTICLE", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
-    "ProdClass", "lv3", "lv4",
+"ARTICLE", "generic", "REGIONAL_AREA", "SITE_ID", "SITE_NAME",
+"ProdClass", "lv3", "lv4",
+    "total_qty", "total_value", "abc_contribution", "cum_pct",
+    "avg_monthly_qty", "stdev_monthly_qty", "cv", "abc_class", "xyz_class", "abc_xyz",
     "total_qty", "total_value", "cv", "abc_class", "xyz_class", "abc_xyz",
 ]
+detail_export = filtered[detail_columns].rename(columns={
+    "ARTICLE": "SKU",
+    "abc_contribution": "Contribution (ABC)",
+    "cum_pct": "Cumulative Contribution (ABC)",
+    "avg_monthly_qty": "Average Sales (XYZ)",
+    "stdev_monthly_qty": "STDEV",
+})
+st.dataframe(format_table(detail_export), use_container_width=True, hide_index=True)
 st.dataframe(format_table(filtered[detail_columns]), use_container_width=True, hide_index=True)
 
 st.download_button(
-    "Download filtered ABCXYZ detail",
+"Download filtered ABCXYZ detail",
+    data=detail_export.to_csv(index=False).encode("utf-8"),
     data=filtered.to_csv(index=False).encode("utf-8"),
-    file_name="abcxyz_filtered_detail.csv",
-    mime="text/csv",
+file_name="abcxyz_filtered_detail.csv",
+mime="text/csv",
 )
 
 # ABCXYZ tables by site
 st.subheader("ABCXYZ by Site")
 
 site_order = sorted(
-    filtered["SITE_ID"].dropna().unique(),
-    key=lambda value: str(value),
+filtered["SITE_ID"].dropna().unique(),
+key=lambda value: str(value),
 )
 
 site_name_mapping = (
-    classified[["SITE_ID", "SITE_NAME"]]
-    .dropna(subset=["SITE_ID"])
-    .drop_duplicates("SITE_ID")
-    .set_index("SITE_ID")["SITE_NAME"]
-    .to_dict()
+classified[["SITE_ID", "SITE_NAME"]]
+.dropna(subset=["SITE_ID"])
+.drop_duplicates("SITE_ID")
+.set_index("SITE_ID")["SITE_NAME"]
+.to_dict()
 )
 
 site_labels = {
-    site_id: f"{str(site_id).replace('.0', '')} - {site_name_mapping.get(site_id, '')}"
-    for site_id in site_order
+site_id: f"{str(site_id).replace('.0', '')} - {site_name_mapping.get(site_id, '')}"
+for site_id in site_order
 }
 
 count_generic_by_site = filtered.pivot_table(
-    index="abc_xyz",
-    columns="SITE_ID",
-    values="generic",
-    aggfunc="nunique",
-    fill_value=0,
+index="abc_xyz",
+columns="SITE_ID",
+values="generic",
+aggfunc="nunique",
+fill_value=0,
 ).reindex(
-    index=ABCXYZ_ORDER,
-    columns=site_order,
-    fill_value=0,
+index=ABCXYZ_ORDER,
+columns=site_order,
+fill_value=0,
 )
 
 sales_value_by_site = filtered.pivot_table(
-    index="abc_xyz",
-    columns="SITE_ID",
-    values="total_value",
-    aggfunc="sum",
-    fill_value=0,
+index="abc_xyz",
+columns="SITE_ID",
+values="total_value",
+aggfunc="sum",
+fill_value=0,
 ).reindex(
-    index=ABCXYZ_ORDER,
-    columns=site_order,
-    fill_value=0,
+index=ABCXYZ_ORDER,
+columns=site_order,
+fill_value=0,
 )
 
 count_generic_by_site = count_generic_by_site.rename(columns=site_labels)
@@ -480,25 +505,25 @@ sales_value_by_site.index.name = "ABCXYZ RESULT"
 site_table_tabs = st.tabs(["Count Generic by Site", "Sales Value by Site"])
 
 with site_table_tabs[0]:
-    count_generic_display = format_numeric_columns(
-        count_generic_by_site.reset_index(),
-        exclude_columns=["ABCXYZ RESULT"],
-    )
+count_generic_display = format_numeric_columns(
+count_generic_by_site.reset_index(),
+exclude_columns=["ABCXYZ RESULT"],
+)
 
-    st.dataframe(
-        count_generic_display,
-        use_container_width=True,
-        hide_index=True,
-    )
+st.dataframe(
+count_generic_display,
+use_container_width=True,
+hide_index=True,
+)
 
 with site_table_tabs[1]:
-    sales_value_display = format_numeric_columns(
-        sales_value_by_site.reset_index(),
-        exclude_columns=["ABCXYZ RESULT"],
-    )
+sales_value_display = format_numeric_columns(
+sales_value_by_site.reset_index(),
+exclude_columns=["ABCXYZ RESULT"],
+)
 
-    st.dataframe(
-        sales_value_display,
-        use_container_width=True,
-        hide_index=True,
-    )
+st.dataframe(
+sales_value_display,
+use_container_width=True,
+hide_index=True,
+)
