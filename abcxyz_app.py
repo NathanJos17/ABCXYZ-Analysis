@@ -210,10 +210,10 @@ def load_and_prepare_data(selected_sales_file):
 
 def classify_articles(data, x_limit, y_limit):
     result = data.sort_values(
-        ["SITE_ID", "ProdClass", "lv3", "lv4", "total_value"],
-        ascending=[True, True, True, True, False],
+        ["SITE_ID", "total_value"],
+        ascending=[True, False],
     ).reset_index(drop=True)
-    ranking_cols = ["REGIONAL_AREA", "SITE_ID", "ProdClass", "lv3", "lv4"]
+    ranking_cols = ["SITE_ID"]
     result["cum_value"] = result.groupby(
         ranking_cols, observed=True, dropna=False
     )["total_value"].cumsum()
